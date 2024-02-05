@@ -1,0 +1,24 @@
+---
+- name: Change SSH default port to 2222
+  hosts: server_list
+  remote_user: root
+  become: true
+
+  tasks:
+    - name: Backup current sshd_config
+      ansible.builtin.command: cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
+      args:
+        creates: /etc/ssh/sshd_config.bak
+
+    - name: Update SSH Port in sshd_config
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?Port '
+        line: 'Port 2222'
+      notify: Restart SSH
+
+  handlers:
+    - name: Restart SSH
+      ansible.builtin.service:
+        name: ssh
+        state: restarted
