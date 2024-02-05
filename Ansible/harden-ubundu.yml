@@ -1,8 +1,7 @@
 ---
 - name: Change SSH default port to 2222
   hosts: server_list
-  remote_user: root
-  become: true
+
 
   tasks:
     - name: Backup current sshd_config

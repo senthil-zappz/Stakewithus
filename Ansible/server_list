@@ -1,0 +1,2 @@
+[hosts]
+server-01 ansible_host=192.168.122.148 ansible_user=root ansible_password=secret
