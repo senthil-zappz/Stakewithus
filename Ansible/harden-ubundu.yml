@@ -1,13 +1,35 @@
 ---
-- name: Change SSH default port to 2222
+- name: Hardening ubundu
   hosts: server_list
-
+  become: true
+  vars:
+    swap_vars:
+      swapfilename: "/swapfile"
+      size: 2G
 
   tasks:
     - name: Backup current sshd_config
-      ansible.builtin.command: cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
-      args:
-        creates: /etc/ssh/sshd_config.bak
+      ansible.builtin.copy:
+        src: /etc/ssh/sshd_config /etc/ssh/sshd_config
+        dest: /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
+        backup: true
+        mode: "0644"
+
+    - name: Disable Root Login
+      ansible.builtin.lineinfile:
+        dest: /etc/ssh/sshd_config
+        regexp: '^PermitRootLogin'
+        line: "PermitRootLogin no"
+        state: present
+
+    - name: Insert/Update "Match User" configuration block in /etc/ssh/sshd_config
+      ansible.builtin.blockinfile:
+        path: /etc/ssh/sshd_config
+        append_newline: true
+        prepend_newline: true
+        block: |
+          Match User ansible-agent
+          AuthenticationMethods "publickey"
 
     - name: Update SSH Port in sshd_config
       ansible.builtin.lineinfile:
@@ -15,6 +37,61 @@
         regexp: '^#?Port '
         line: 'Port 2222'
       notify: Restart SSH
+
+    - name: Install UFW
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+
+    - name: Configure UFW with Default Deny Rule
+      community.general.ufw:
+        rule: deny
+
+    - name: Allow port range 1000-2000
+      community.general.ufw:
+        rule: allow
+        port: 1000-2000
+        proto: tcp
+
+    - name: Allow SSH through UFW
+      community.general.ufw:
+        rule: allow
+        name: OPENSSH
+
+    - name: Check if /swapfile exists
+      register: swap_file_check
+      ansible.builtin.stat:
+        path: /swapfile
+
+    - name: Fail it if /swapfile exists
+      ansible.builtin.fail:
+        msg: Swap file exists
+      when: swap_file_check.stat.exists
+
+    - name: Create /swapfile
+      ansible.builtin.command: fallocate -l {{ swap_vars.size }} /swapfile
+      register: create_status
+      changed_when: create_status.rc == 0
+
+    - name: Change permission of the /swapfile
+      ansible.builtin.file:
+        path: /swapfile
+        mode: "0600"
+
+    - name: Format /swapfile
+      ansible.builtin.command: mkswap /swapfile
+      register: makeswap_status
+      changed_when: makeswap_status.rc == 0
+
+    - name: Turn on swap
+      ansible.builtin.command: swapon /swapfile
+      register: swapon_status
+      changed_when: swapon_status.rc == 0
+
+    - name: Add to /etc/fstab
+      ansible.builtin.command: echo "\n/swapfile swap swap defaults 0 0\n" >> /etc/fstab
+      register: fstab_write_status
+      changed_when: fstab_write_status.rc != 0
 
   handlers:
     - name: Restart SSH
